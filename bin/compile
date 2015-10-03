@@ -124,6 +124,9 @@ build_dependencies() {
   else
     install_node_modules "$BUILD_DIR"
   fi
+
+  echo "Running grunt default task..."
+  node node_modules/.bin/grunt 2>&1
 }
 
 header "Building dependencies"
