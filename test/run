@@ -1,6 +1,93 @@
 #!/usr/bin/env bash
 # See README.md for info on running these tests.
 
+testWarnUnmetDep() {
+  compile "unmet-dep"
+  assertCaptured "may cause runtime issues"
+  assertCapturedSuccess
+  compile "no-version"
+  assertNotCaptured "may cause runtime issues"
+  assertCapturedSuccess
+}
+
+testWarnEconnreset() {
+  compile "econnreset-mock"
+  assertCaptured "may be related to npm versions"
+  assertCapturedError
+  compile "no-version"
+  assertNotCaptured "may be related to npm versions"
+  assertCapturedSuccess
+}
+
+testWarnNoStart() {
+  compile "no-start"
+  assertCaptured "may not specify any way to start"
+  assertCapturedSuccess
+  compile "no-version"
+  assertNotCaptured "may not specify any way to start"
+  assertCapturedSuccess
+}
+
+testWarnDevDeps() {
+  compile "missing-devdeps-1"
+  assertCaptured "A module may be missing"
+  assertNotCaptured "This module may be specified"
+  assertCapturedError
+  compile "missing-devdeps-2"
+  assertCaptured "A module may be missing"
+  assertCaptured "This module may be specified"
+  assertCapturedError
+  compile "failing-build"
+  assertNotCaptured "A module may be missing"
+  assertNotCaptured "This module may be specified"
+  assertCapturedError
+}
+
+testEnvBlacklist() {
+  local cache=$(mktmpdir)
+  local env_dir=$(mktmpdir)
+  echo 'tr_TR.UTF-8' > "$env_dir"/LANG
+  echo 'safeVar' > "$env_dir"/SAFE
+  compile "echo-lang" $cache $env_dir
+  assertCaptured "safeVar"
+  assertNotCaptured "tr_TR.UTF-8"
+  assertCapturedSuccess
+}
+
+testPrePostBuildScripts() {
+  compile "pre-post-build-scripts"
+  assertCaptured "Running heroku-prebuild"
+  assertCaptured "echo heroku-prebuild hook message"
+  assertCaptured "Running heroku-postbuild"
+  assertCaptured "echo heroku-postbuild hook message"
+  assertCapturedSuccess
+
+  compile "stable-node"
+  assertNotCaptured "Running heroku-prebuild"
+  assertNotCaptured "Running heroku-postbuild"
+  assertCapturedSuccess
+}
+
+testWarningsOnFailure() {
+  compile "many-warnings"
+  assertCaptured "troubleshooting-node-deploys"
+  assertCaptured "node_modules checked into source"
+  assertCaptured "has several known issues"
+  assertNotCaptured "please submit a ticket"
+  assertCapturedError
+}
+
+testMultipleRuns() {
+  local compileDir=$(mktmpdir)
+  local cacheDir=$(mktmpdir)
+
+  cp -a test/fixtures/stable-node/. ${compileDir}
+  compileDir "$compileDir" "$cacheDir"
+  assertCapturedSuccess
+  compileDir "$compileDir" "$cacheDir"
+  assertCapturedSuccess
+}
+
 testDisableCache() {
   cache=$(mktmpdir)
   env_dir=$(mktmpdir)
@@ -105,17 +192,10 @@ testConcurrencyCustomLimit() {
   assertCapturedSuccess
 }
 
-testConcurrencySaneMaximum() {
-  LOG_CONCURRENCY=true MEMORY_AVAILABLE=6144 WEB_MEMORY=32 capture $(pwd)/profile/nodejs.sh
-  assertCaptured "Detected 6144 MB available memory, 32 MB limit per process (WEB_MEMORY)"
-  assertCaptured "Recommending WEB_CONCURRENCY=32"
-  assertCapturedSuccess
-}
-
 testInvalidNode() {
   compile "invalid-node"
-  assertCaptured "Downloading and installing node 0.11.33"
-  assertCaptured "Unable to download node 0.11.33"
+  assertCaptured "Downloading and installing node 0.11.333"
+  assertCaptured "Unable to download node 0.11.333"
   assertCapturedError
 }
 
@@ -169,7 +249,6 @@ testModulesCheckedIn() {
   assertCaptured "(preinstall script)"
   assertCaptured "Installing any new modules"
   assertCaptured "(postinstall script)"
-  assertNotCaptured "Pruning any extraneous modules"
   assertCapturedSuccess
 }
 
@@ -196,7 +275,7 @@ testNoVersion() {
   compile "no-version"
   assertCaptured "engines.node (package.json):  unspecified"
   assertCaptured "Resolving node version (latest stable) via semver.io"
-  assertCaptured "Downloading and installing node 4."
+  assertCaptured "Downloading and installing node 5."
   assertCapturedSuccess
 }
 
@@ -270,16 +349,6 @@ testFailingBuild() {
   assertCapturedError 1 ""
 }
 
-testWarningsOnFailure() {
-  compile "many-warnings"
-  assertCaptured "troubleshooting-node-deploys"
-  assertCaptured "Node version not specified"
-  assertCaptured "node_modules checked into source"
-  assertCaptured "has several known issues"
-  assertNotCaptured "please submit a ticket"
-  assertCapturedError
-}
-
 testTicketOnFailure() {
   compile "invalid-dependency"
   assertCaptured "troubleshooting-node-deploys"
@@ -300,7 +369,7 @@ testDangerousRangeStar() {
   compile "dangerous-range-star"
   assertCaptured "Dangerous semver range"
   assertCaptured "Resolving node version * via semver.io"
-  assertCaptured "Downloading and installing node 4."
+  assertCaptured "Downloading and installing node 5."
   assertCapturedError
 }
 
@@ -308,14 +377,14 @@ testDangerousRangeGreaterThan() {
   compile "dangerous-range-greater-than"
   assertCaptured "Dangerous semver range"
   assertCaptured "Resolving node version >0.4 via semver.io"
-  assertCaptured "Downloading and installing node 4."
+  assertCaptured "Downloading and installing node 5."
   assertCapturedError
 }
 
 testRangeWithSpace() {
   compile "range-with-space"
   assertCaptured "Resolving node version >= 0.8.x via semver.io"
-  assertCaptured "Downloading and installing node 4."
+  assertCaptured "Downloading and installing node 5."
   assertCapturedSuccess
 }
 
@@ -446,7 +515,7 @@ testShrinkwrap() {
 testProfileExport() {
   compile "stable-node"
   assertCaptured "Creating runtime environment"
-  assertFileContains "export PATH=\"\$HOME/.heroku/node/bin:\$HOME/bin:\$HOME/node_modules/.bin:\$PATH\"" "${compile_dir}/.profile.d/nodejs.sh"
+  assertFileContains "export PATH=\"\$HOME/.heroku/node/bin:\$PATH:\$HOME/bin:\$HOME/node_modules/.bin\"" "${compile_dir}/.profile.d/nodejs.sh"
   assertFileContains "export NODE_HOME=\"\$HOME/.heroku/node\"" "${compile_dir}/.profile.d/nodejs.sh"
   assertCapturedSuccess
 }
@@ -454,8 +523,8 @@ testProfileExport() {
 testMultiExport() {
   compile "stable-node"
   assertFileContains "export PATH=" "${bp_dir}/export"
-  assertFileContains "/.heroku/node/bin:" "${bp_dir}/export"
-  assertFileContains "/node_modules/.bin:\$PATH" "${bp_dir}/export"
+  assertFileContains "/.heroku/node/bin" "${bp_dir}/export"
+  assertFileContains "/node_modules/.bin" "${bp_dir}/export"
   assertFileContains "export NODE_HOME=" "${bp_dir}/export"
   assertFileContains "/.heroku/node\"" "${bp_dir}/export"
   assertCapturedSuccess
@@ -495,6 +564,18 @@ compile() {
   cp -a $(pwd)/* ${bp_dir}
   cp -a ${bp_dir}/test/fixtures/$1/. ${compile_dir}
   capture ${bp_dir}/bin/compile ${compile_dir} ${2:-$(mktmpdir)} $3
+}
+
+compileDir() {
+  default_process_types_cleanup
+
+  local bp_dir=$(mktmpdir)
+  local compile_dir=${1:-$(mktmpdir)}
+  local cache_dir=${2:-$(mktmpdir)}
+  local env_dir=$3
+
+  cp -a $(pwd)/* ${bp_dir}
+  capture ${bp_dir}/bin/compile ${compile_dir} ${cache_dir} ${env_dir}
 }
 
 release() {
